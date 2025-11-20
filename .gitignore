@@ -1,0 +1,95 @@
+# ================================
+# Python
+# ================================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.so
+*.egg-info/
+.env
+.venv/
+venv/
+ENV/
+env/
+
+# ================================
+# Jupyter
+# ================================
+.ipynb_checkpoints/
+*.ipynb_convert
+*.nbconvert
+
+# ================================
+# OS / Editor
+# ================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ================================
+# Logs
+# ================================
+*.log
+logs/
+nohup.out
+
+# ================================
+# Outputs / Checkpoints
+# ================================
+out/
+output/
+output_best/
+output_prompt_vis.jpg
+output_vis.jpg
+runs/
+vis_test/
+
+# ================================
+# Dataset & Large Binary Files
+# ================================
+data/
+datasets/
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+
+# ================================
+# Video / Image temporary files
+# ================================
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+*.mp4
+*.avi
+
+# ================================
+# Model Weights (YOLO, FastSAM, etc.)
+# ================================
+*.pt
+*.onnx
+*.engine
+*.ckpt
+*.safetensors
+models/
+checkpoints/
+
+# ================================
+# Temporary scripts
+# ================================
+*.sh~
+*.tmp
+
+# ================================
+# Cache
+# ================================
+cache/
+__cache__/
+*.cache
+*.tmp
