@@ -12,7 +12,7 @@ set -euo pipefail
 # OUT_DIR=${OUT_DIR:-/result}
 
 #Local version
-EXTRACT_FRAMES=${EXTRACT_FRAMES:-false}
+EXTRACT_FRAMES=${EXTRACT_FRAMES:-true}
 EXTRACT_SCRIPT=${EXTRACT_SCRIPT:-code/extract_frame.sh}
 
 WEIGHTS=${WEIGHTS:-code/checkpoint/v8s_640_bs_16_30eps_v3/weights/best.pt}
