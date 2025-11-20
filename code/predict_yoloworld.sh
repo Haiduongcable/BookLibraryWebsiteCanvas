@@ -4,10 +4,10 @@ set -euo pipefail
 # Flexible wrapper around predict_yoloworld.py.
 # Override defaults via env vars (e.g. WEIGHTS, FRAMES_ROOT).
 
-EXTRACT_FRAMES=${EXTRACT_FRAMES:-false}
+EXTRACT_FRAMES=${EXTRACT_FRAMES:-true}
 EXTRACT_SCRIPT=${EXTRACT_SCRIPT:-/code/extract_frame.sh}
 
-WEIGHTS=${WEIGHTS:-/code/checkpoint/yoloworld_no_bg_v8s_20eps_bs32_exp2}
+WEIGHTS=${WEIGHTS:-/code/checkpoint/yoloworld_no_bg_v8s_20eps_bs32_exp2/weights/best.pt}
 FRAMES_ROOT=${FRAMES_ROOT:-/data/extracted_frames}
 OUT_DIR=${OUT_DIR:-/result}
 IMG_SIZE=${IMG_SIZE:-640}

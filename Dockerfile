@@ -42,14 +42,12 @@ WORKDIR /app
 # Copy requirements first (better caching)
 # ------------------------------------------------------------
 COPY requirements.txt /app/
-COPY code/requirements.txt /tmp/code-requirements.txt
 
 # ------------------------------------------------------------
 # Install Python dependencies
 # ------------------------------------------------------------
 RUN pip3 install --upgrade pip \
-    && pip3 install --no-cache-dir -r requirements.txt \
-    && pip3 install --no-cache-dir -r /tmp/code-requirements.txt
+    && pip3 install --no-cache-dir -r requirements.txt
 
 # ------------------------------------------------------------
 # Copy application code
