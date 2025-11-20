@@ -139,20 +139,36 @@ class StreamingYOLO:
         frame_idx: int,
         video_vis_dir: Optional[Path] = None,
     ) -> Optional[Dict[str, int]]:
-        """Inference trên 1 file ảnh, kèm visualize nếu cần."""
+        """Inference trên 1 file ảnh, kèm visualize nếu cần (không đi qua predict_streaming)."""
+        results = self.model.predict(
+            source=str(img_path),
+            imgsz=self.cfg.imgsz,
+            conf=self.cfg.conf,
+            iou=self.cfg.iou,
+            device=self.cfg.device,
+            stream=False,
+            verbose=False,
+            save=False,
+        )[0]
+
         im_bgr = cv2.imread(str(img_path))
         if im_bgr is None:
             self.logger.warning("Cannot read image: %s", img_path)
             return None
 
-        frame_rgb = im_bgr[:, :, ::-1]
-        bbox = self.predict_streaming(frame_rgb, frame_idx)
-        if bbox is None:
-            if self.cfg.save_vis and video_vis_dir:
-                cv2.imwrite(str(video_vis_dir / img_path.name), im_bgr)
+        should_save_original = self.cfg.save_vis and (not results.boxes or len(results.boxes) == 0)
+        if should_save_original and video_vis_dir:
+            cv2.imwrite(str(video_vis_dir / img_path.name), im_bgr)
             return None
 
-        x1, y1, x2, y2 = bbox
+        if results.boxes is None or len(results.boxes) == 0:
+            return None
+
+        best_bbox = self._select_best_bbox(results)
+        if best_bbox is None:
+            return None
+
+        x1, y1, x2, y2 = best_bbox
         if self.cfg.save_vis and video_vis_dir:
             im_vis = draw_bbox(im_bgr.copy(), (x1, y1, x2, y2))
             cv2.imwrite(str(video_vis_dir / img_path.name), im_vis)

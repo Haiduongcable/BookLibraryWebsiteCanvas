@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # ====== CONFIG ======
-SRC_ROOT="/home/haiduong/Documents/Project/BookLibraryWebsiteCanvas/data/samples"
-DEST_ROOT="/home/haiduong/Documents/Project/BookLibraryWebsiteCanvas/data/extracted_frames"  # change if needed
+SRC_ROOT="/data/samples"
+DEST_ROOT="/data/extracted_frames"  # change if needed
 QUALITY=2   # ffmpeg quality for JPEG (2 = very high, 1 = highest but huge)
 # ====================
 
