@@ -1,15 +1,19 @@
 #!/usr/bin/env python
 """
-YOLO inference trên các frame video -> tạo submission.json + visualize (tùy chọn)
+YOLO inference trên các frame video -> tạo submission.json + visualize (tùy chọn).
 Chỉ lấy bbox có confidence cao nhất mỗi frame.
+
+Streaming requirement: define a model class with predict_streaming(frame_rgb_np, frame_idx)
+that returns [x1, y1, x2, y2] if an object is found, otherwise None.
 """
 
 import argparse
 import json
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -70,12 +74,97 @@ def draw_bbox(im: np.ndarray, bbox: tuple, conf: Optional[float] = None) -> np.n
     return im
 
 
+@dataclass
+class StreamingConfig:
+    weights: str
+    imgsz: int = 640
+    conf: float = 0.25
+    iou: float = 0.45
+    device: Optional[str] = None
+    save_vis: bool = False
+
+
+class StreamingYOLO:
+    """
+    Wrapper cho YOLO với giao diện predict_streaming.
+    Sử dụng lại cùng model cho streaming hoặc batch inference.
+    """
+
+    def __init__(self, cfg: StreamingConfig, logger: logging.Logger, vis_root: Optional[Path] = None) -> None:
+        self.cfg = cfg
+        self.logger = logger
+        self.model = YOLO(cfg.weights)
+        self.vis_root = vis_root if cfg.save_vis else None
+
+    def _select_best_bbox(self, results: Any) -> Optional[Tuple[int, int, int, int]]:
+        """Chọn bbox có confidence cao nhất trong kết quả YOLO."""
+        if results.boxes is None or len(results.boxes) == 0:
+            return None
+        confs = results.boxes.conf.cpu().numpy()
+        xyxy = results.boxes.xyxy.cpu().numpy()
+        best_idx = int(np.argmax(confs))
+        x1, y1, x2, y2 = xyxy[best_idx]
+        return int(x1), int(y1), int(x2), int(y2)
+
+    def predict_streaming(self, frame_rgb_np: np.ndarray, frame_idx: int) -> Optional[Sequence[int]]:
+        """
+        Giả lập môi trường streaming: nhận frame RGB (numpy) và trả về bbox tốt nhất hoặc None.
+        - frame_rgb_np: ảnh RGB dạng numpy array.
+        - frame_idx: chỉ số frame (dùng khi log / visualize).
+        """
+        if frame_rgb_np is None or frame_rgb_np.size == 0:
+            self.logger.warning("Empty frame received at idx %s", frame_idx)
+            return None
+
+        frame_bgr = frame_rgb_np[:, :, ::-1]  # YOLO nhận BGR (OpenCV style)
+        results = self.model.predict(
+            source=frame_bgr,
+            imgsz=self.cfg.imgsz,
+            conf=self.cfg.conf,
+            iou=self.cfg.iou,
+            device=self.cfg.device,
+            stream=False,
+            verbose=False,
+            save=False,
+        )[0]
+
+        best_bbox = self._select_best_bbox(results)
+        if best_bbox is None:
+            return None
+        return list(best_bbox)
+
+    def predict_image_file(
+        self,
+        img_path: Path,
+        frame_idx: int,
+        video_vis_dir: Optional[Path] = None,
+    ) -> Optional[Dict[str, int]]:
+        """Inference trên 1 file ảnh, kèm visualize nếu cần."""
+        im_bgr = cv2.imread(str(img_path))
+        if im_bgr is None:
+            self.logger.warning("Cannot read image: %s", img_path)
+            return None
+
+        frame_rgb = im_bgr[:, :, ::-1]
+        bbox = self.predict_streaming(frame_rgb, frame_idx)
+        if bbox is None:
+            if self.cfg.save_vis and video_vis_dir:
+                cv2.imwrite(str(video_vis_dir / img_path.name), im_bgr)
+            return None
+
+        x1, y1, x2, y2 = bbox
+        if self.cfg.save_vis and video_vis_dir:
+            im_vis = draw_bbox(im_bgr.copy(), (x1, y1, x2, y2))
+            cv2.imwrite(str(video_vis_dir / img_path.name), im_vis)
+
+        return {"frame": frame_idx, "x1": x1, "y1": y1, "x2": x2, "y2": y2}
+
+
 def process_video(
     video_dir: Path,
-    model: YOLO,
-    args: argparse.Namespace,
+    streamer: StreamingYOLO,
     vis_dir: Optional[Path],
-    logger: logging.Logger
+    logger: logging.Logger,
 ) -> Dict[str, Any]:
     """
     Xử lý một video: inference từng frame -> detections + visualize (nếu cần).
@@ -87,68 +176,22 @@ def process_video(
     if len(frames) == 0:
         return {"video_id": video_id, "detections": []}
 
-    # Tạo thư mục visualize cho video (nếu cần)
     video_vis_dir = vis_dir / video_id if vis_dir else None
     if video_vis_dir:
         video_vis_dir.mkdir(parents=True, exist_ok=True)
 
     for img_path in tqdm(frames, desc=f"  └ {video_id}", leave=False):
+        frame_idx = parse_frame_idx(img_path)
         try:
-            # Inference
-            results = model.predict(
-                source=str(img_path),
-                imgsz=args.imgsz,
-                conf=args.conf,
-                iou=args.iou,
-                device=args.device,
-                stream=False,
-                verbose=False,
-                save=False
-            )[0]
-
-            im = cv2.imread(str(img_path))
-            if im is None:
-                continue
-
-            # Lưu ảnh gốc nếu không có detection (và cần visualize)
-            should_save_original = args.save_vis and (not results.boxes or len(results.boxes) == 0)
-
-            if should_save_original and video_vis_dir:
-                cv2.imwrite(str(video_vis_dir / img_path.name), im)
-                continue
-
-            if results.boxes is None or len(results.boxes) == 0:
-                continue
-
-            # Lấy bbox có conf cao nhất
-            confs = results.boxes.conf.cpu().numpy()
-            xyxy = results.boxes.xyxy.cpu().numpy()
-            best_idx = int(np.argmax(confs))
-            x1, y1, x2, y2 = xyxy[best_idx]
-            conf = float(confs[best_idx])
-            frame_idx = parse_frame_idx(img_path)
-
-            detections.append({
-                "frame": frame_idx,
-                "x1": int(x1),
-                "y1": int(y1),
-                "x2": int(x2),
-                "y2": int(y2)
-            })
-
-            # Visualize
-            if args.save_vis and video_vis_dir:
-                im_vis = draw_bbox(im.copy(), (x1, y1, x2, y2), conf)
-                cv2.imwrite(str(video_vis_dir / img_path.name), im_vis)
-
+            det = streamer.predict_image_file(img_path, frame_idx, video_vis_dir)
+            if det:
+                detections.append(det)
         except Exception as e:
-            logger.warning(f"{img_path.name}: {e}")
+            logger.warning("%s: %s", img_path.name, e)
 
-    # Định dạng submission
     if not detections:
         return {"video_id": video_id, "detections": []}
-    else:
-        return {"video_id": video_id, "detections": [{"bboxes": detections}]}
+    return {"video_id": video_id, "detections": [{"bboxes": detections}]}
 
 
 def main() -> None:
@@ -181,9 +224,18 @@ def main() -> None:
     if vis_root:
         vis_root.mkdir(parents=True, exist_ok=True)
 
+    cfg = StreamingConfig(
+        weights=args.weights,
+        imgsz=args.imgsz,
+        conf=args.conf,
+        iou=args.iou,
+        device=args.device,
+        save_vis=args.save_vis,
+    )
+
     # Load model
-    logger.info(f"Loading model: {args.weights}")
-    model = YOLO(args.weights)
+    logger.info("Loading model: %s", args.weights)
+    streamer = StreamingYOLO(cfg, logger, vis_root)
 
     # List videos
     videos = list_video_dirs(frames_root)
@@ -192,7 +244,7 @@ def main() -> None:
     # Process
     submission: List[Dict[str, Any]] = []
     for vdir in tqdm(videos, desc="Processing videos"):
-        result = process_video(vdir, model, args, vis_root, logger)
+        result = process_video(vdir, streamer, vis_root, logger)
         submission.append(result)
 
     # Save submission
